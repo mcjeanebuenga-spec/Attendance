@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Attendance Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .student-number {
+      color: black;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .day {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      font-size: 12px;
+      font-weight: bold;
+      text-align: center;
+      line-height: 20px;
+      border-radius: 3px;
+      color: white;
+    }
+    .day.present { background-color: #28a745; }
+    .day.late { background-color: #ffc107; color: black; }
+    .day.absent { background-color: #dc3545; }
+  </style>
+</head>
+<body>
+
+  <h2 id="dateDisplay">Attendance Table</h2>
+
+  <table class="attendance-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Name</th>
+        <th>Status</th>
+        <th>Mark As</th>
+      </tr>
+    </thead>
+    <tbody id="studentBody">
+    </tbody>
+  </table>
+
+  <div class="table-button-row">
+    <button id="showResultsBtn">Show Results</button>
+    <button id="addStudentBtn">Add Student</button>
+    <button id="saveBtn">Save</button>
+    <button id="backBtn">Back to Front Page</button>
+  </div>
+
+  <div id="results" class="results-container" style="display: none;">
+    <h2>ATTENDANCE LIST:</h2>
+    <ul id="summaryList"></ul>
+    <div id="analyticsPanel" style="margin-top: 20px;">
+      <p id="totalMarked"></p>
+      <p id="presentCount"></p>
+      <p id="lateCount"></p>
+      <p id="absentCount"></p>
+    </div>
+  </div>
+
+    <script>
+document.addEventListener("DOMContentLoaded", () => {
+  const studentBody = document.getElementById("studentBody");
+  const summaryList = document.getElementById("summaryList");
+  const showResultsBtn = document.getElementById("showResultsBtn");
+  const resultsContainer = document.getElementById("results");
+  const addStudentBtn = document.getElementById("addStudentBtn");
+  const backBtn = document.getElementById("backBtn");
+  const saveBtn = document.getElementById("saveBtn");
+
+  const params = new URLSearchParams(window.location.search);
+  const selectedDate = params.get("date") || new Date().toISOString().slice(0, 10);
+  const fileKey = params.get("file") || "default_attendance";
+
+  document.getElementById("dateDisplay").textContent = `Attendance for ${selectedDate}`;
+  loadAttendanceForFile(fileKey, selectedDate);
+
+  if (addStudentBtn) {
+    addStudentBtn.addEventListener("click", () => {
+      createStudentRow();
+    });
+  }
+
+  if (backBtn) {
+    backBtn.addEventListener("click", () => {
+      saveAttendanceBackToLocalStorage(fileKey);
+      window.location.href = "front.html";
+    });
+  }
+
+  if (showResultsBtn) {
+    showResultsBtn.addEventListener("click", () => {
+      saveAttendanceBackToLocalStorage(fileKey);
+      updateSummary();
+      resultsContainer.style.display = "block";
+      showResultsBtn.textContent = "Refresh Results";
+    });
+  }
+
+  if (saveBtn) {
+    saveBtn.addEventListener("click", () => {
+      saveAttendanceBackToLocalStorage(fileKey);
+      alert("Attendance data saved!");
+    });
+  }
+
+  function getLast7Dates() {
+    const dates = [];
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    return dates;
+  }
+
+  function createStudentRow(name = "", status = null, history = []) {
+    const row = document.createElement("tr");
+    row.history = history;
+    row.innerHTML = `
+      <td class="student-number">New</td>
+      <td><input type="text" class="no-box" value="${name}" placeholder="Type here" /></td>
+      <td>
+        <button class="statusButton present">Present</button>
+        <button class="statusButton late">Late</button>
+        <button class="statusButton absent">Absent</button>
+      </td>
+      <td><div class="history"></div></td>
+    `;
+    studentBody.appendChild(row);
+    attachStatusLogic(row);
+    attachDeleteLogic(row);
+    updateHistoryDisplay(row);
+    renumberRows();
+
+    const nameInput = row.querySelector("input.no-box");
+    nameInput.addEventListener("input", () => {
+      saveAttendanceBackToLocalStorage(fileKey);
+    });
+
+    if (status) {
+      const btn = row.querySelector(`.statusButton.${status.toLowerCase()}`);
+      if (btn) btn.click();
+    }
+  }
+
+  function attachStatusLogic(row) {
+    const buttons = row.querySelectorAll(".statusButton");
+    buttons.forEach(button => {
+      button.addEventListener("click", () => {
+        const alreadySelected = button.classList.contains("selected");
+        buttons.forEach(btn => {
+          btn.disabled = false;
+          btn.classList.remove("selected");
+          btn.style.outline = "none";
+        });
+
+        if (!alreadySelected) {
+          button.classList.add("selected");
+          button.style.outline = "2px solid #000";
+          buttons.forEach(btn => {
+            if (btn !== button) btn.disabled = true;
+          });
+
+          const today = new Date().toISOString().slice(0, 10);
+          const status = button.textContent.charAt(0);
+          const history = row.history || [];
+          const existing = history.find(h => h.date === today);
+          if (existing) {
+            existing.status = status;
+          } else {
+            history.push({ date: today, status });
+          }
+
+          const last7 = getLast7Dates();
+          row.history = history.filter(h => last7.includes(h.date));
+          updateHistoryDisplay(row);
+          saveAttendanceBackToLocalStorage(fileKey);
+        }
+      });
+    });
+  }
+
+  function attachDeleteLogic(row) {
+    const numberCell = row.querySelector(".student-number");
+    numberCell.addEventListener("click", () => {
+      const nameInput = row.querySelector("input.no-box");
+      const name = nameInput?.value.trim() || "Unnamed";
+      const confirmDelete = confirm(`Are you sure you want to delete ${name}?`);
+      if (confirmDelete) {
+        row.remove();
+        renumberRows();
+        saveAttendanceBackToLocalStorage(fileKey);
+      }
+    });
+  }
+
+  function renumberRows() {
+    const rows = studentBody.querySelectorAll("tr");
+    rows.forEach((row, index) => {
+      const numberCell = row.querySelector(".student-number");
+      if (numberCell) numberCell.textContent = `#${index + 1}`;
+    });
+  }
+
+  function updateHistoryDisplay(row) {
+  const container = row.querySelector(".history");
+  const history = row.history || [];
+  const last7 = getLast7Dates();
+
+  container.innerHTML = "";
+  container.style.display = "flex";
+  container.style.justifyContent = "center";
+  container.style.alignItems = "center";
+
+
+  const recentHistory = history.filter(h => last7.includes(h.date));
+
+  let status = "-";
+  let title = "No attendance recorded";
+
+  if (recentHistory.length > 0) {
+    const latest = recentHistory[recentHistory.length - 1];
+    status = latest.status;
+    title = `Recorded on ${latest.date}`;
+  }
+
+  const className =
+    status === "P" ? "present" :
+    status === "L" ? "late" :
+    status === "A" ? "absent" : "";
+
+  const span = document.createElement("span");
+  span.className = `day ${className}`;
+  span.textContent = status;
+  span.title = title;
+  container.appendChild(span);
+}
+
+
+  function loadAttendanceForFile(fileKey, date) {
+    const saved = JSON.parse(localStorage.getItem(fileKey) || "[]");
+
+    saved.forEach(entry => {
+      const todayRecord = entry.history?.find(h => h.date === date);
+      const status = todayRecord
+        ? (todayRecord.status === "P" ? "Present" :
+           todayRecord.status === "L" ? "Late" :
+           todayRecord.status === "A" ? "Absent" : null)
+        : entry.status;
+
+      createStudentRow(entry.name || "Unnamed", status, entry.history || []);
+    });
+  }
+
+  function saveAttendanceBackToLocalStorage(fileKey) {
+    const rows = document.querySelectorAll("#studentBody tr");
+    const updated = [];
+
+    rows.forEach(row => {
+      const nameInput = row.querySelector("input.no-box");
+      const name = nameInput ? nameInput.value.trim() || "Unnamed" : "Unnamed";
+      const selected = row.querySelector(".statusButton.selected");
+      const status = selected ? selected.textContent : null;
+      const history = row.history || [];
+
+      updated.push({ name, status, history });
+    });
+
+    localStorage.setItem(fileKey, JSON.stringify(updated));
+  }
+
+  function updateSummary() {
+    summaryList.innerHTML = "";
+
+    let present = 0;
+    let late = 0;
+    let absent = 0;
+    let marked = 0;
+
+    document.querySelectorAll("#studentBody tr").forEach(row => {
+      const input = row.querySelector("input.no-box");
+      const name = input ? input.value.trim() || "Unnamed" : "Unnamed";
+      const selected = row.querySelector(".statusButton.selected");
+      const status = selected ? selected.textContent : "Not marked";
+
+      const item = document.createElement("li");
+      item.textContent = `${name}: ${status}`;
+      summaryList.appendChild(item);
+
+      if (status === "Present") present++;
+      else if (status === "Late") late++;
+      else if (status === "Absent") absent++;
+
+      if (selected) marked++;
+    });
+
+    document.getElementById("totalMarked").textContent = `Total Marked: ${marked}`;
+    document.getElementById("presentCount").textContent = `Present: ${present}`;
+    document.getElementById("lateCount").textContent = `Late: ${late}`;
+    document.getElementById("absentCount").textContent = `Absent: ${absent}`;
+  }
+});
+</script>
+
+</body>
+</html>
