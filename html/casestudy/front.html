@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Attendance</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    input[readonly] {
+      background-color: #f4f2f2;
+      cursor: not-allowed;
+    }
+    .clickable-date {
+      color: #007bff;
+      cursor: pointer;
+    }
+    .clickable-date:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="pageTitle">ATTENDANCE FILES</h1>
+
+    <button id="backBtn">Back</button>
+
+    <div class="date-range">
+      <label for="startDate">From:</label>
+      <input type="date" id="startDate" />
+      <label for="endDate">To:</label>
+      <input type="date" id="endDate" />
+      <button id="searchBtn">Search</button>
+      <button id="addBtn">Add</button>
+      <button id="resetBtn">Reset</button>
+      <button id="restoreBtn">Restore Deleted</button>
+    </div>
+
+    <table class="attendance-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Attendance Date</th>
+          <th>In Time</th>
+          <th>Out Time</th>
+          <th>Dashboard</th>
+        </tr>
+      </thead>
+      <tbody id="attendanceBody"></tbody>
+    </table>
+  </div>
+
+<script>
+let nextDate = new Date();
+let sectionName = "";
+let currentUser = "";
+
+function getAccounts() {
+  return JSON.parse(localStorage.getItem("accounts") || "{}");
+}
+function getAccount() {
+  const accounts = getAccounts();
+  return accounts[currentUser];
+}
+function saveAccount(account) {
+  const accounts = getAccounts();
+  accounts[currentUser] = account;
+  localStorage.setItem("accounts", JSON.stringify(accounts));
+}
+function getSection(account, sectionName) {
+  return account.data.sections.find(s => s.name === sectionName);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const params = new URLSearchParams(window.location.search);
+  currentUser = params.get("user") || localStorage.getItem("currentUser") || "guest";
+  sectionName = params.get("section") || "DefaultSection";
+
+  document.getElementById("pageTitle").textContent = sectionName + " FILES";
+
+  loadFromAccount();
+
+  document.getElementById("backBtn").addEventListener("click", () => {
+    window.location.href = "sections.html";
+  });
+
+  document.getElementById("restoreBtn").addEventListener("click", () => {
+    const account = getAccount();
+    const section = getSection(account, sectionName);
+    const deleted = section.deleted || [];
+
+    if (deleted.length === 0) {
+      alert("No deleted entries to restore.");
+      return;
+    }
+
+    const choice = prompt(
+      `You have ${deleted.length} deleted entr${deleted.length === 1 ? 'y' : 'ies'}.\n\nType:\n  1 → Restore only the last one\n  all → Restore all\n\nLeave blank to cancel.`
+    );
+
+    if (choice === "1") {
+      const entry = deleted.pop();
+      insertRow(entry);
+      section.attendance.push(entry);
+      section.deleted = deleted;
+      saveAccount(account);
+      alert("Last deleted entry restored.");
+    } else if (choice === "all") {
+      deleted.forEach(entry => {
+        insertRow(entry);
+        section.attendance.push(entry);
+      });
+      section.deleted = [];
+      saveAccount(account);
+      alert("All deleted entries restored.");
+    }
+  });
+
+  document.getElementById("addBtn").addEventListener("click", () => {
+    const dateStr = nextDate.toISOString().slice(0, 10);
+    const entry = { date: dateStr, attendanceDate: dateStr, inTime: "09:00", outTime: "18:00" };
+    insertRow(entry);
+
+    const account = getAccount();
+    const section = getSection(account, sectionName);
+    section.attendance.push(entry);
+    saveAccount(account);
+
+    nextDate.setDate(nextDate.getDate() + 1);
+  });
+
+  document.getElementById("attendanceBody").addEventListener("click", (e) => {
+    const cell = e.target;
+
+    if (cell.classList.contains("clickable-date")) {
+      const row = cell.closest("tr");
+      const dateText = row.querySelector(".clickable-date")?.textContent.trim();
+      const attendanceDate = row.querySelector('input[type="date"]')?.value;
+      const inTime = row.querySelectorAll('input[type="time"]')[0]?.value;
+      const outTime = row.querySelectorAll('input[type="time"]')[1]?.value;
+
+      const confirmDelete = confirm(`Do you want to delete the record for ${dateText}?`);
+      if (confirmDelete) {
+        const account = getAccount();
+        const section = getSection(account, sectionName);
+        section.deleted = section.deleted || [];
+        section.deleted.push({ date: dateText, attendanceDate, inTime, outTime });
+        section.attendance = section.attendance.filter(a => a.date !== dateText);
+        saveAccount(account);
+        row.remove();
+      }
+    }
+
+    if (cell.classList.contains("updateBtn")) {
+      saveToAccount();
+      const row = cell.closest("tr");
+      const dateStr = row.querySelector(".clickable-date")?.textContent.trim();
+      if (dateStr) {
+        window.location.href = `main.html?file=${encodeURIComponent(dateStr)}&user=${encodeURIComponent(currentUser)}&section=${encodeURIComponent(sectionName)}`;
+      }
+    }
+  });
+
+  document.getElementById("searchBtn").addEventListener("click", () => {
+    const startDate = document.getElementById("startDate").value;
+    const endDate = document.getElementById("endDate").value;
+
+    document.querySelectorAll("#attendanceBody tr").forEach(row => {
+      const rowDate = row.querySelector(".clickable-date")?.textContent.trim();
+      const show =
+        (!startDate || rowDate >= startDate) &&
+        (!endDate || rowDate <= endDate);
+      row.style.display = show ? "" : "none";
+    });
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    document.getElementById("startDate").value = "";
+    document.getElementById("endDate").value = "";
+    document.querySelectorAll("#attendanceBody tr").forEach(row => {
+      row.style.display = "";
+    });
+  });
+});
+
+function insertRow(entry) {
+  const tbody = document.getElementById("attendanceBody");
+  const newRow = document.createElement("tr");
+  newRow.innerHTML = `
+    <td class="clickable-date">${entry.date}</td>
+    <td><input type="date" value="${entry.attendanceDate}" readonly /></td>
+    <td><input type="time" value="${entry.inTime}" /></td>
+    <td><input type="time" value="${entry.outTime}" /></td>
+    <td><button class="updateBtn">Update</button></td>
+  `;
+  tbody.appendChild(newRow);
+}
+
+function saveToAccount() {
+  const rows = document.querySelectorAll("#attendanceBody tr");
+  const data = [];
+
+  rows.forEach(row => {
+    const date = row.querySelector(".clickable-date")?.textContent.trim();
+    const attendanceDate = row.querySelector('input[type="date"]')?.value;
+    const inTime = row.querySelectorAll('input[type="time"]')[0]?.value;
+    const outTime = row.querySelectorAll('input[type="time"]')[1]?.value;
+
+    if (date && attendanceDate && inTime && outTime) {
+      data.push({ date, attendanceDate, inTime, outTime });
+    }
+  });
+
+  const account = getAccount();
+  const section = getSection(account, sectionName);
+  section.attendance = data;
+  saveAccount(account);
+}
+
+function loadFromAccount() {
+  const account = getAccount();
+  const section = getSection(account, sectionName);
+  const saved = section?.attendance || [];
+  const tbody = document.getElementById("attendanceBody");
+  tbody.innerHTML = "";
+
+  saved.forEach(entry => insertRow(entry));
+
+  if (saved.length > 0) {
+    const last = saved[saved.length - 1];
+    nextDate = new Date(last.date);
+    nextDate.setDate(nextDate.getDate() + 1);
+  }
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .container {
+      max-width: 400px;
+      margin: 50px auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+    }
+    input {
+      width: 100%;
+      padding: 8px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      margin-top: 15px;
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      background-color: #007bff;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    .toggle {
+      margin-top: 15px;
+      text-align: center;
+      cursor: pointer;
+      color: #007bff;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="formTitle">Sign In</h1>
+    <form id="loginForm">
+      <label for="username">Username:</label>
+      <input type="text" id="username" required />
+      <label for="password">Password:</label>
+      <input type="password" id="password" required />
+      <button type="submit" id="loginBtn">Login</button>
+    </form>
+    <div class="toggle" id="toggleForm">Don't have an account? Sign Up</div>
+  </div>
+
+<script>
+let isLogin = true;
+
+document.getElementById("toggleForm").addEventListener("click", () => {
+  isLogin = !isLogin;
+  document.getElementById("formTitle").textContent = isLogin ? "Sign In" : "Sign Up";
+  document.getElementById("loginBtn").textContent = isLogin ? "Login" : "Register";
+  document.getElementById("toggleForm").textContent = isLogin 
+    ? "Don't have an account? Sign Up" 
+    : "Already have an account? Sign In";
+});
+
+document.getElementById("loginForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+
+  const username = document.getElementById("username").value.trim();
+  const password = document.getElementById("password").value.trim();
+
+  if (!username || !password) {
+    alert("Please enter username and password.");
+    return;
+  }
+
+  if (isLogin) {
+    const users = JSON.parse(localStorage.getItem("users") || "{}");
+    if (users[username] && users[username] === password) {
+      localStorage.setItem("currentUser", username);
+      window.location.href = `sections.html?user=${encodeURIComponent(username)}`;
+    } else {
+      alert("Invalid username or password.");
+    }
+  } else {
+    const users = JSON.parse(localStorage.getItem("users") || "{}");
+    if (users[username]) {
+      alert("Username already exists. Please choose another.");
+    } else {
+      users[username] = password;
+      localStorage.setItem("users", JSON.stringify(users));
+      alert("Account created successfully! You can now log in.");
+      isLogin = true;
+      document.getElementById("formTitle").textContent = "Sign In";
+      document.getElementById("loginBtn").textContent = "Login";
+      document.getElementById("toggleForm").textContent = "Don't have an account? Sign Up";
+    }
+  }
+});
+</script>
+</body>
+</html>

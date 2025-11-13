@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sections</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    input[readonly] {
+      background-color: #f4f2f2;
+      cursor: not-allowed;
+    }
+    .clickable-section {
+      color: #007bff;
+      cursor: pointer;
+      text-transform: uppercase; 
+    }
+    .clickable-section:hover {
+      text-decoration: underline;
+    }
+    #modalSectionName {
+      text-transform: uppercase; 
+    }
+    .modal {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-content {
+      background: #fff;
+      padding: 20px;
+      border-radius: 6px;
+      width: 300px;
+    }
+    .modal-actions {
+      margin-top: 15px;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>SECTION FILES</h1>
+
+    <button id="logoutBtn">Logout</button>
+
+    <div class="date-range">
+      <label for="searchSection">Search Section:</label>
+      <input type="text" id="searchSection" placeholder="Enter section name" />
+      <button id="searchBtn">Search</button>
+      <button id="addSectionBtn">Add Section</button>
+      <button id="resetBtn">Reset</button>
+      <button id="restoreBtn">Restore Deleted</button>
+    </div>
+
+    <table class="attendance-table">
+      <thead>
+        <tr>
+          <th>Section Name</th>
+          <th>Created Date</th>
+          <th>Dashboard</th>
+        </tr>
+      </thead>
+      <tbody id="sectionBody"></tbody>
+    </table>
+  </div>
+
+  <div id="sectionModal" class="modal">
+    <div class="modal-content">
+      <h3>Edit or Delete Section</h3>
+      <label for="modalSectionName">Section Name:</label>
+      <input type="text" id="modalSectionName" />
+      <div class="modal-actions">
+        <button id="saveSectionBtn">Save</button>
+        <button id="deleteSectionBtn">Delete</button>
+        <button id="cancelSectionBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+let sectionCounter = 1;
+let currentUser = "";
+let currentRow = null;
+let currentSectionName = "";
+
+function getAccounts() {
+  return JSON.parse(localStorage.getItem("accounts") || "{}");
+}
+function getAccount() {
+  const accounts = getAccounts();
+  return accounts[currentUser];
+}
+function saveAccount(account) {
+  const accounts = getAccounts();
+  accounts[currentUser] = account;
+  localStorage.setItem("accounts", JSON.stringify(accounts));
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const params = new URLSearchParams(window.location.search);
+  currentUser = params.get("user") || localStorage.getItem("currentUser") || "guest";
+
+  loadSections();
+
+  document.getElementById("logoutBtn").addEventListener("click", () => {
+    localStorage.removeItem("currentUser");
+    window.location.href = "log.html";
+  });
+
+  document.getElementById("addSectionBtn").addEventListener("click", () => {
+    let sectionName = prompt("Enter new section name:", "Section " + sectionCounter);
+    if (sectionName) {
+      sectionName = sectionName.toUpperCase(); // 🔑 enforce capslock
+      const createdDate = new Date().toISOString().slice(0,10);
+      const account = getAccount();
+
+      if (account.data.sections.some(sec => sec.name === sectionName)) {
+        alert("Section already exists.");
+        return;
+      }
+
+      const newSection = { name: sectionName, created: createdDate, attendance: [], students: [], deleted: [] };
+      account.data.sections.push(newSection);
+      saveAccount(account);
+
+      insertSection(newSection);
+      sectionCounter++;
+    }
+  });
+
+  document.getElementById("sectionBody").addEventListener("click", (e) => {
+    const cell = e.target;
+
+    if (cell.classList.contains("clickable-section")) {
+      currentRow = cell.closest("tr");
+      currentSectionName = cell.textContent.trim();
+
+      const modal = document.getElementById("sectionModal");
+      const input = document.getElementById("modalSectionName");
+      input.value = currentSectionName;
+      modal.style.display = "flex";
+    }
+
+    if (cell.classList.contains("updateBtn")) {
+      const row = cell.closest("tr");
+      const sectionName = row.querySelector(".clickable-section")?.textContent.trim();
+      if (sectionName) {
+        window.location.href = `front.html?user=${encodeURIComponent(currentUser)}&section=${encodeURIComponent(sectionName)}`;
+      }
+    }
+  });
+
+  document.getElementById("searchBtn").addEventListener("click", () => {
+    const query = document.getElementById("searchSection").value.toLowerCase();
+    document.querySelectorAll("#sectionBody tr").forEach(row => {
+      const sectionName = row.querySelector(".clickable-section")?.textContent.toLowerCase();
+      row.style.display = sectionName.includes(query) ? "" : "none";
+    });
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    document.getElementById("searchSection").value = "";
+    document.querySelectorAll("#sectionBody tr").forEach(row => {
+      row.style.display = "";
+    });
+  });
+
+  document.getElementById("restoreBtn").addEventListener("click", () => {
+    const account = getAccount();
+    const deleted = account.data.deletedSections || [];
+    if (deleted.length === 0) {
+      alert("No deleted sections to restore.");
+      return;
+    }
+
+    const choice = prompt(
+      `You have ${deleted.length} deleted section${deleted.length === 1 ? '' : 's'}.\n\nType:\n  1 → Restore only the last one\n  all → Restore all\n\nLeave blank to cancel.`
+    );
+
+    if (choice === "1") {
+      const entry = deleted.pop();
+      entry.name = entry.name.toUpperCase(); 
+      account.data.sections.push(entry);
+      saveAccount(account);
+      insertSection(entry);
+      alert("Last deleted section restored.");
+    } else if (choice === "all") {
+      deleted.forEach(entry => {
+        entry.name = entry.name.toUpperCase(); 
+        account.data.sections.push(entry);
+        insertSection(entry);
+      });
+      account.data.deletedSections = [];
+      saveAccount(account);
+      alert("All deleted sections restored.");
+    }
+  });
+
+  document.getElementById("saveSectionBtn").addEventListener("click", () => {
+    let newName = document.getElementById("modalSectionName").value.trim().toUpperCase(); 
+    const account = getAccount();
+
+    if (account.data.sections.some(sec => sec.name === newName && sec.name !== currentSectionName)) {
+      alert("Section name already exists.");
+      return;
+    }
+
+    const section = account.data.sections.find(s => s.name === currentSectionName);
+    if (section) {
+      section.name = newName;
+      saveAccount(account);
+      currentRow.querySelector(".clickable-section").textContent = newName;
+    }
+    document.getElementById("sectionModal").style.display = "none";
+  });
+
+  document.getElementById("deleteSectionBtn").addEventListener("click", () => {
+    const account = getAccount();
+    const sectionIndex = account.data.sections.findIndex(s => s.name === currentSectionName);
+    if (sectionIndex !== -1) {
+      const deletedSection = account.data.sections.splice(sectionIndex, 1)[0];
+      account.data.deletedSections = account.data.deletedSections || [];
+      account.data.deletedSections.push(deletedSection);
+      saveAccount(account);
+      currentRow.remove();
+    }
+    document.getElementById("sectionModal").style.display = "none";
+  });
+
+  document.getElementById("cancelSectionBtn").addEventListener("click", () => {
+    document.getElementById("sectionModal").style.display = "none";
+  });
+});
+
+function insertSection(entry) {
+  const tbody = document.getElementById("sectionBody");
+  const newRow = document.createElement("tr");
+  newRow.innerHTML = `
+    <td class="clickable-section">${entry.name}</td>
+    <td>${entry.created}</td>
+    <td><button class="updateBtn">Open</button></td>
+  `;
+  tbody.appendChild(newRow);
+}
+
+function loadSections() {
+  const account = getAccount();
+  const saved = account?.data?.sections || [];
+  const tbody = document.getElementById("sectionBody");
+  tbody.innerHTML = "";
+  saved.forEach(entry => {
+
+    entry.name = entry.name.toUpperCase();
+    insertSection(entry);
+  });
+  sectionCounter = saved.length + 1;
+}
+</script>
+
+</body>
+</html>
